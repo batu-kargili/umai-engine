@@ -27,6 +27,22 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class InputArtifact(BaseModel):
+    """Structured artifact passed alongside chat messages."""
+
+    artifact_type: Literal[
+        "TOOL_INPUT",
+        "TOOL_OUTPUT",
+        "MCP_REQUEST",
+        "MCP_RESPONSE",
+        "MEMORY_WRITE",
+        "CUSTOM",
+    ] = "CUSTOM"
+    name: str | None = None
+    payload_summary: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
 class InputPayload(BaseModel):
     """Structured input payload sent for policy evaluation.
 
@@ -41,7 +57,7 @@ class InputPayload(BaseModel):
     phase_focus: Literal["LAST_USER_MESSAGE", "LAST_ASSISTANT_MESSAGE"]
     content_type: Literal["text", "markdown", "json"] = "text"
     language: Optional[str] = None
-    artifacts: List[dict] = Field(default_factory=list)
+    artifacts: List[InputArtifact] = Field(default_factory=list)
 
 
 class Flags(BaseModel):

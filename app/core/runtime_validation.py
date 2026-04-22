@@ -17,6 +17,18 @@ def _env_truthy(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _runtime_environment() -> str:
+    for key in ("UMAI_ENVIRONMENT", "APP_ENV", "ENVIRONMENT", "NODE_ENV"):
+        raw = os.getenv(key)
+        if raw and raw.strip():
+            return raw.strip().lower()
+    return "development"
+
+
+def _is_production() -> bool:
+    return _runtime_environment() in {"prod", "production"}
+
+
 def validate_engine_runtime() -> None:
     """Validate environment variables and log a startup summary.
 
@@ -33,10 +45,16 @@ def validate_engine_runtime() -> None:
 
     redis_url = os.getenv("REDIS_URL", "").strip()
     require_redis = _env_truthy("REQUIRE_REDIS")
+    production = _is_production()
     if redis_url:
         # Truncate to avoid leaking credentials in logs
         preview = (redis_url[:30] + "...") if len(redis_url) > 30 else redis_url
         logger.info("startup.store=redis url=%s", preview)
+    elif production:
+        raise RuntimeError(
+            "Production runtime requires REDIS_URL so the engine can load signed "
+            "guardrail snapshots without falling back to dummy data"
+        )
     elif require_redis:
         raise RuntimeError(
             "REQUIRE_REDIS=true but REDIS_URL is not set - "
@@ -51,6 +69,11 @@ def validate_engine_runtime() -> None:
     signing_key = os.getenv("SNAPSHOT_SIGNING_KEY", "").strip()
     if signing_key:
         logger.info("startup.snapshot_signing=enabled")
+    elif production:
+        raise RuntimeError(
+            "Production runtime requires SNAPSHOT_SIGNING_KEY so published "
+            "snapshots are verified before evaluation"
+        )
     else:
         logger.warning(
             "startup.snapshot_signing=disabled: SNAPSHOT_SIGNING_KEY not set, "

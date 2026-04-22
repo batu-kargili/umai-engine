@@ -104,6 +104,14 @@ def _env_truthy(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _runtime_environment() -> str:
+    for key in ("UMAI_ENVIRONMENT", "APP_ENV", "ENVIRONMENT", "NODE_ENV"):
+        raw = os.getenv(key)
+        if raw and raw.strip():
+            return raw.strip().lower()
+    return "development"
+
+
 def get_guardrail_store() -> GuardrailStore:
     global _STORE
     if _STORE is None:
@@ -112,6 +120,10 @@ def get_guardrail_store() -> GuardrailStore:
         if redis_url:
             logging.getLogger("umai.engine.store").info("store.selected redis")
             _STORE = RedisGuardrailStore(redis_url)
+        elif _runtime_environment() in {"prod", "production"}:
+            raise RuntimeError(
+                "Production runtime requires REDIS_URL - dummy guardrail snapshots are disabled"
+            )
         elif _env_truthy("REQUIRE_REDIS"):
             raise RuntimeError(
                 "REQUIRE_REDIS=true but REDIS_URL is not set - "

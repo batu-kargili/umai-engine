@@ -10,6 +10,7 @@ from typing import Iterator
 
 from app.core import guardrail_store
 from app.core.guardrail_store import DummyGuardrailStore, RedisGuardrailStore, get_guardrail_store
+from app.core.runtime_validation import validate_engine_runtime
 from app.core.snapshot_verifier import verify_snapshot_signature
 
 
@@ -75,6 +76,22 @@ class GuardrailStoreSelectionTests(unittest.TestCase):
         with reset_store(), patched_environ(REDIS_URL=None, REQUIRE_REDIS="true"):
             with self.assertRaisesRegex(RuntimeError, "REQUIRE_REDIS=true"):
                 get_guardrail_store()
+
+    def test_production_runtime_disables_dummy_store(self) -> None:
+        with reset_store(), patched_environ(REDIS_URL=None, NODE_ENV="production", REQUIRE_REDIS=None):
+            with self.assertRaisesRegex(RuntimeError, "dummy guardrail snapshots are disabled"):
+                get_guardrail_store()
+
+
+class RuntimeValidationTests(unittest.TestCase):
+    def test_production_runtime_requires_snapshot_signing(self) -> None:
+        with patched_environ(
+            NODE_ENV="production",
+            REDIS_URL="redis://redis:6379/0",
+            SNAPSHOT_SIGNING_KEY=None,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "SNAPSHOT_SIGNING_KEY"):
+                validate_engine_runtime()
 
 
 if __name__ == "__main__":

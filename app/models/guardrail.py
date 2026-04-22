@@ -144,6 +144,86 @@ class LLMConfig(BaseModel):
     auth: LLMAuthConfig | None = None
 
 
+class AgtPolicyCondition(BaseModel):
+    """Single AGT condition evaluated against action metadata."""
+
+    field: str
+    operator: Literal[
+        "EQUALS",
+        "NOT_EQUALS",
+        "IN",
+        "NOT_IN",
+        "CONTAINS",
+        "MATCHES_REGEX",
+        "EXISTS",
+        "NOT_EXISTS",
+        "STARTS_WITH",
+        "ENDS_WITH",
+        "GT",
+        "GTE",
+        "LT",
+        "LTE",
+    ] = "EQUALS"
+    value: Any | None = None
+
+    @model_validator(mode="after")
+    def validate_condition(self) -> "AgtPolicyCondition":
+        if self.operator in {"EXISTS", "NOT_EXISTS"}:
+            return self
+        if self.value is None:
+            raise ValueError(f"value is required for operator {self.operator}")
+        return self
+
+
+class AgtPolicyRule(BaseModel):
+    """Deterministic AGT policy rule stored in a UMAI snapshot."""
+
+    id: str
+    description: str | None = None
+    effect: Literal[
+        "ALLOW",
+        "BLOCK",
+        "STEP_UP_APPROVAL",
+        "ALLOW_WITH_WARNINGS",
+    ]
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "MEDIUM"
+    conditions: List[AgtPolicyCondition] = Field(default_factory=list)
+
+
+class AgtPolicyDocument(BaseModel):
+    """Serializable AGT policy document."""
+
+    version: str = "1"
+    default_action: Literal[
+        "ALLOW",
+        "BLOCK",
+        "STEP_UP_APPROVAL",
+        "ALLOW_WITH_WARNINGS",
+    ] = "ALLOW"
+    rules: List[AgtPolicyRule] = Field(default_factory=list)
+
+
+class AgtConfig(BaseModel):
+    """Optional AGT configuration embedded inside a guardrail snapshot."""
+
+    enabled: bool = False
+    mode: Literal["ENFORCE", "ADVISORY"] = "ENFORCE"
+    enforced_phases: List[GuardrailPhase] = Field(default_factory=list)
+    policy_document: AgtPolicyDocument | None = None
+    bundle_ref: str | None = None
+    fail_closed: bool = True
+
+    @model_validator(mode="after")
+    def validate_agt(self) -> "AgtConfig":
+        if not self.enabled:
+            return self
+        if not self.policy_document:
+            raise ValueError("policy_document is required when AGT is enabled")
+        if not self.enforced_phases:
+            raise ValueError("enforced_phases is required when AGT is enabled")
+        return self
+
+
 class GuardrailSnapshot(BaseModel):
     """Resolved guardrail configuration attached to an internal request.
 
@@ -165,5 +245,6 @@ class GuardrailSnapshot(BaseModel):
     preflight: HeuristicConfig
     policies: List[Policy]
     llm_config: LLMConfig
+    agt: AgtConfig | None = None
     signature: str | None = None
     key_id: str | None = None

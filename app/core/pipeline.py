@@ -8,6 +8,7 @@ import time
 from threading import Event
 from typing import Iterable, List, Optional
 
+from app.core.agt_adapter import evaluate_agt_policy
 from app.core.guardrail_store import GuardrailStore
 from app.models.guardrail import GuardrailSnapshot, Policy
 from app.models.policy_result import PolicyResult
@@ -121,79 +122,93 @@ class Pipeline:
 
         policy_results: List[PolicyResult] = []
         tasks: List[asyncio.Task[PolicyResult]] = []
+        block_result: Optional[PolicyResult] = None
 
-        for policy in snapshot.policies:
-            if not policy.enabled or req.phase not in policy.phases:
-                logger.info(
-                    "pipeline.policy.skip policy_id=%s enabled=%s phase=%s",
-                    policy.id,
-                    policy.enabled,
-                    req.phase,
-                )
-                continue
-            if policy.type == "CONTEXT_AWARE" and not req.flags.allow_llm_calls:
-                logger.info("pipeline.policy.llm_disabled policy_id=%s", policy.id)
-                policy_results.append(
-                    PolicyResult(
-                        policy_id=policy.id,
-                        type=policy.type,
-                        name=policy.name,
-                        status="ERROR",
-                        severity="MEDIUM",
-                        details={"error": "llm_disabled"},
-                        latency_ms=0.0,
-                    )
-                )
-                errors.append(
-                    ErrorInfo(
-                        type="LLM_DISABLED",
-                        source=policy.id,
-                        message="LLM calls disabled via request flags",
-                    )
-                )
-                continue
-
-            handler = _build_handler(policy)
-            if not handler:
-                logger.warning("pipeline.policy.unsupported policy_id=%s type=%s", policy.id, policy.type)
-                policy_results.append(
-                    PolicyResult(
-                        policy_id=policy.id,
-                        type=policy.type,
-                        name=policy.name,
-                        status="ERROR",
-                        severity="MEDIUM",
-                        details={"error": "unsupported_policy_type"},
-                        latency_ms=0.0,
-                    )
-                )
-                errors.append(
-                    ErrorInfo(
-                        type="POLICY_UNSUPPORTED",
-                        source=policy.id,
-                        message=f"Unsupported policy type {policy.type}",
-                    )
-                )
-                continue
-
-            input_text = extract_target_text(
-                req.input, policy.config.get("target", "LAST_MESSAGE")
-            )
+        agt_result = evaluate_agt_policy(snapshot, req)
+        if agt_result:
             logger.info(
-                "pipeline.policy.start policy_id=%s type=%s",
-                policy.id,
-                policy.type,
+                "pipeline.agt.result status=%s severity=%s matched_rule_id=%s",
+                agt_result.status,
+                agt_result.severity,
+                (agt_result.details or {}).get("matched_rule_id"),
             )
-            task = asyncio.create_task(
-                self._run_policy(handler, input_text, context, policy, req.timeout_ms)
-            )
-            tasks.append(task)
+            policy_results.append(agt_result)
+            if agt_result.status == "BLOCK":
+                block_result = agt_result
+
+        if block_result is None:
+            for policy in snapshot.policies:
+                if not policy.enabled or req.phase not in policy.phases:
+                    logger.info(
+                        "pipeline.policy.skip policy_id=%s enabled=%s phase=%s",
+                        policy.id,
+                        policy.enabled,
+                        req.phase,
+                    )
+                    continue
+                if policy.type == "CONTEXT_AWARE" and not req.flags.allow_llm_calls:
+                    logger.info("pipeline.policy.llm_disabled policy_id=%s", policy.id)
+                    policy_results.append(
+                        PolicyResult(
+                            policy_id=policy.id,
+                            type=policy.type,
+                            name=policy.name,
+                            status="ERROR",
+                            severity="MEDIUM",
+                            details={"error": "llm_disabled"},
+                            latency_ms=0.0,
+                        )
+                    )
+                    errors.append(
+                        ErrorInfo(
+                            type="LLM_DISABLED",
+                            source=policy.id,
+                            message="LLM calls disabled via request flags",
+                        )
+                    )
+                    continue
+
+                handler = _build_handler(policy)
+                if not handler:
+                    logger.warning("pipeline.policy.unsupported policy_id=%s type=%s", policy.id, policy.type)
+                    policy_results.append(
+                        PolicyResult(
+                            policy_id=policy.id,
+                            type=policy.type,
+                            name=policy.name,
+                            status="ERROR",
+                            severity="MEDIUM",
+                            details={"error": "unsupported_policy_type"},
+                            latency_ms=0.0,
+                        )
+                    )
+                    errors.append(
+                        ErrorInfo(
+                            type="POLICY_UNSUPPORTED",
+                            source=policy.id,
+                            message=f"Unsupported policy type {policy.type}",
+                        )
+                    )
+                    continue
+
+                input_text = extract_target_text(
+                    req.input, policy.config.get("target", "LAST_MESSAGE")
+                )
+                logger.info(
+                    "pipeline.policy.start policy_id=%s type=%s",
+                    policy.id,
+                    policy.type,
+                )
+                task = asyncio.create_task(
+                    self._run_policy(handler, input_text, context, policy, req.timeout_ms)
+                )
+                tasks.append(task)
 
         if tasks:
-            results, block_result = await self._collect_results(tasks, stop_event)
+            results, async_block_result = await self._collect_results(tasks, stop_event)
             policy_results.extend(results)
-        else:
-            block_result = None
+            if block_result is None:
+                block_result = async_block_result
 
         error_results = [result for result in policy_results if result.status == "ERROR"]
         flag_results = [result for result in policy_results if result.status == "FLAG"]
@@ -437,6 +452,15 @@ def _reason_from_policy(result: PolicyResult, prefix: Optional[str] = None) -> s
         return f"{prefix or result.type}: rule {rule_id} matched"
     if result.type == "CONTEXT_AWARE" and "policy_category" in details:
         return f"{result.type}: {details.get('policy_category')}"
+    if result.type == "AGT":
+        matched_rule_id = details.get("matched_rule_id")
+        if matched_rule_id:
+            return f"AGT: rule {matched_rule_id}"
+        if details.get("error"):
+            return f"AGT: {details.get('error')}"
+        if details.get("action"):
+            return f"AGT: action {details.get('action')}"
+        return f"AGT: {result.status}"
     if "error" in details:
         return f"{result.type}: {details.get('error')}"
     return f"{result.type}: {result.status}"

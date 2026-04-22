@@ -174,13 +174,13 @@ DUMMY_GUARDRAILS = {
             },
         ],
         "llm_config": {
-            "provider": "GROQ",
-            "base_url": "https://api.groq.com/openai/v1",
+            "provider": "OPENROUTER",
+            "base_url": "https://openrouter.ai/api/v1",
             "model": "openai/gpt-oss-safeguard-20b",
             "timeout_ms": 2000,
             "auth": {
                 "type": "bearer",
-                "secret_env": "GROQ_API_KEY",
+                "secret_env": "OPENROUTER_API_KEY",
             },
         },
     }

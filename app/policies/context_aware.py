@@ -255,6 +255,9 @@ def _get_legacy_llm_api_key(base_url: str) -> str:
     if "groq.com" in base:
         keys = ("GROQ_API_KEY", "LLM_API_KEY")
         message = "Missing Groq API key. Set GROQ_API_KEY (or LLM_API_KEY)."
+    elif "openrouter.ai" in base:
+        keys = ("OPENROUTER_API_KEY", "LLM_API_KEY")
+        message = "Missing OpenRouter API key. Set OPENROUTER_API_KEY (or LLM_API_KEY)."
     elif "openai.com" in base:
         keys = ("OPENAI_API_KEY", "LLM_API_KEY")
         message = "Missing OpenAI API key. Set OPENAI_API_KEY (or LLM_API_KEY)."
@@ -265,9 +268,9 @@ def _get_legacy_llm_api_key(base_url: str) -> str:
             "HUGGINGFACE_API_KEY, or LLM_API_KEY."
         )
     else:
-        keys = ("LLM_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "HF_TOKEN")
+        keys = ("LLM_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "HF_TOKEN")
         message = (
-            "Missing LLM API key. Set LLM_API_KEY (or GROQ_API_KEY / OPENAI_API_KEY / HF_TOKEN)."
+            "Missing LLM API key. Set LLM_API_KEY (or OPENROUTER_API_KEY / GROQ_API_KEY / OPENAI_API_KEY / HF_TOKEN)."
         )
 
     for key in keys:
