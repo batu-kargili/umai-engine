@@ -40,6 +40,8 @@ class InputArtifact(BaseModel):
     ] = "CUSTOM"
     name: str | None = None
     payload_summary: str | None = None
+    content: str | None = None
+    content_type: Literal["text", "markdown", "json"] = "text"
     metadata: dict = Field(default_factory=dict)
 
 
@@ -101,3 +103,4 @@ class InternalRequest(BaseModel):
     input: InputPayload
     timeout_ms: Optional[int] = 1500
     flags: Flags = Field(default_factory=Flags)
+    agent_context: dict | None = None

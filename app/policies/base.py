@@ -42,8 +42,16 @@ class PolicyHandler(Protocol):
 def extract_target_text(payload: InputPayload, target: str) -> str:
     """Choose the text to scan based on target and phase focus."""
 
+    if target == "ATTACHMENTS":
+        return format_artifacts(payload)
+    if target == "FULL_CONTEXT":
+        return "\n\n".join(
+            part for part in [format_full_history(payload.messages), format_artifacts(payload)] if part
+        )
     if target == "FULL_HISTORY":
-        return format_full_history(payload.messages)
+        return "\n\n".join(
+            part for part in [format_full_history(payload.messages), format_artifacts(payload)] if part
+        )
     return extract_phase_focus_message(payload)
 
 
@@ -61,3 +69,15 @@ def format_full_history(messages: Sequence[ChatMessage]) -> str:
     """Format the full transcript for policy evaluation."""
 
     return "\n".join(f"{message.role}: {message.content}" for message in messages)
+
+
+def format_artifacts(payload: InputPayload) -> str:
+    """Format artifact content for policy evaluation."""
+
+    parts: list[str] = []
+    for artifact in payload.artifacts:
+        if not artifact.content:
+            continue
+        label = artifact.name or artifact.artifact_type
+        parts.append(f"artifact:{label}:\n{artifact.content}")
+    return "\n\n".join(parts)

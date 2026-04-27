@@ -108,6 +108,7 @@ def _request(
     phase: str,
     content: str,
     artifact: InputArtifact | None,
+    agent_context: dict | None = None,
 ) -> InternalRequest:
     return InternalRequest(
         request_id="req-1",
@@ -125,6 +126,7 @@ def _request(
             artifacts=[artifact] if artifact else [],
         ),
         timeout_ms=1000,
+        agent_context=agent_context,
     )
 
 
@@ -173,6 +175,37 @@ class AgtPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.decision.action, "STEP_UP_APPROVAL")
         self.assertEqual(response.triggering_policy.details.get("policy_source"), "agt")
         self.assertEqual(response.triggering_policy.details.get("matched_rule_id"), "write-step-up")
+
+    async def test_signed_agent_context_supplies_identity_metadata(self) -> None:
+        pipeline = Pipeline(_Store(_snapshot()))
+        request = _request(
+            phase="TOOL_INPUT",
+            content="Update the CRM record.",
+            agent_context={
+                "agent_id": "agent-1",
+                "agent_did": "did:umai:test:agent-1",
+                "trust_score": 0.72,
+                "trust_tier": "STANDARD",
+                "capabilities": ["crm:write"],
+                "run_id": "run-1",
+                "step_id": "step-1",
+            },
+            artifact=InputArtifact(
+                artifact_type="TOOL_INPUT",
+                name="crm.update",
+                payload_summary="Update CRM record",
+                metadata={
+                    "action": "write",
+                    "tool_name": "crm.update",
+                },
+            ),
+        )
+
+        response = await pipeline.evaluate(request)
+
+        self.assertEqual(response.decision.action, "STEP_UP_APPROVAL")
+        self.assertEqual(response.triggering_policy.details.get("agent_did"), "did:umai:test:agent-1")
+        self.assertEqual(response.triggering_policy.details.get("trust_tier"), "STANDARD")
 
     async def test_mcp_request_dangerous_method_blocks(self) -> None:
         pipeline = Pipeline(_Store(_snapshot()))
@@ -296,6 +329,43 @@ class AgtPipelineTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.decision.action, "BLOCK")
         self.assertEqual(response.triggering_policy.policy_id, "pol-delete-keyword")
+
+    async def test_full_history_policy_scans_attachment_content(self) -> None:
+        heuristic_policy = Policy(
+            id="pol-secret-attachment",
+            type="HEURISTIC",
+            name="Attachment Secret Block",
+            enabled=True,
+            phases=["PRE_LLM"],
+            config={
+                "target": "FULL_HISTORY",
+                "rules": [
+                    {
+                        "id": "secret-in-file",
+                        "mode": "EXACT",
+                        "pattern": "api_secret_from_file",
+                        "block_on_match": True,
+                    }
+                ],
+            },
+        )
+        pipeline = Pipeline(_Store(_snapshot(policies=[heuristic_policy])))
+        request = _request(
+            phase="PRE_LLM",
+            content="Please analyze this file.",
+            artifact=InputArtifact(
+                artifact_type="CUSTOM",
+                name="upload.txt",
+                payload_summary="Uploaded text file",
+                content="contains api_secret_from_file",
+                metadata={"inspection_status": "extracted"},
+            ),
+        )
+
+        response = await pipeline.evaluate(request)
+
+        self.assertEqual(response.decision.action, "BLOCK")
+        self.assertEqual(response.triggering_policy.policy_id, "pol-secret-attachment")
 
 
 if __name__ == "__main__":

@@ -172,7 +172,18 @@ def _build_action_context(req: InternalRequest) -> dict[str, Any]:
             list(REQUIRED_METADATA_BY_PHASE.get(req.phase, ())),
         )
 
-    metadata = artifact.metadata or {}
+    agent_context = req.agent_context or {}
+    metadata = {**(artifact.metadata or {})}
+    for key in (
+        "agent_id",
+        "agent_did",
+        "trust_score",
+        "trust_tier",
+        "capabilities",
+        "public_key_fingerprint",
+    ):
+        if key not in metadata and agent_context.get(key) is not None:
+            metadata[key] = agent_context.get(key)
     required = REQUIRED_METADATA_BY_PHASE.get(req.phase, ())
     missing = [field for field in required if not _has_value(metadata.get(field))]
     if missing:
@@ -188,6 +199,13 @@ def _build_action_context(req: InternalRequest) -> dict[str, Any]:
         "artifact_name": artifact.name,
         "payload_summary": artifact.payload_summary,
         "agent_id": str(metadata.get("agent_id")),
+        "agent_did": metadata.get("agent_did"),
+        "trust_score": metadata.get("trust_score"),
+        "trust_tier": metadata.get("trust_tier"),
+        "capabilities": metadata.get("capabilities") or [],
+        "public_key_fingerprint": metadata.get("public_key_fingerprint"),
+        "run_id": agent_context.get("run_id"),
+        "step_id": agent_context.get("step_id"),
         "action": normalized_action,
         "tool_name": metadata.get("tool_name"),
         "server_name": metadata.get("server_name"),

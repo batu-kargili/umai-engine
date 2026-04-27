@@ -45,7 +45,7 @@ class HeuristicConfig(BaseModel):
         max_length: Optional maximum length for evaluation.
     """
 
-    target: Literal["LAST_MESSAGE", "FULL_HISTORY"] = "LAST_MESSAGE"
+    target: Literal["LAST_MESSAGE", "FULL_HISTORY", "ATTACHMENTS", "FULL_CONTEXT"] = "LAST_MESSAGE"
     rules: List[HeuristicRule]
     max_length: Optional[int] = None
 
@@ -79,7 +79,7 @@ class ContextAwareConfig(BaseModel):
         fail_closed_on_error: Whether to block on LLM errors.
     """
 
-    target: Literal["LAST_MESSAGE", "FULL_HISTORY"] = "LAST_MESSAGE"
+    target: Literal["LAST_MESSAGE", "FULL_HISTORY", "ATTACHMENTS", "FULL_CONTEXT"] = "LAST_MESSAGE"
     instructions: str
     definitions_and_category_map: str
     examples: str
