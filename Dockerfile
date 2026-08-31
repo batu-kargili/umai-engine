@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.11-slim-bookworm
 
 LABEL org.opencontainers.image.title="UMAI Enterprise Engine" \
       org.opencontainers.image.vendor="UMAI" \
@@ -14,6 +14,10 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+
+RUN groupadd -r umai && useradd -r -g umai -d /app -s /sbin/nologin umai \
+    && chown -R umai:umai /app
+USER umai
 
 EXPOSE 9000
 
