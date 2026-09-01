@@ -1,4 +1,5 @@
-FROM python:3.11.11-slim-bookworm
+ARG SOURCE_DATE_EPOCH
+FROM python:3.11.11-slim-bookworm@sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5
 
 LABEL org.opencontainers.image.title="UMAI Enterprise Engine" \
       org.opencontainers.image.vendor="UMAI" \
@@ -10,8 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-compile --require-hashes -r requirements.lock
 
 COPY app ./app
 
